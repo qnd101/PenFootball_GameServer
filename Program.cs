@@ -9,12 +9,15 @@ using System.Security.Policy;
 using System.Net.Http;
 using PenFootball_Server.Services;
 using System.Text.Json;
+using System.Net.NetworkInformation;
+using PenFootball_GameServer;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<ConnectionSettings>(builder.Configuration.GetSection("ConnectionSettings"));
 
 var tokenkeysettings = new TokenKeySettings();
+var entrancesettings = new EntranceSettings();
 //먼저 메인 서버로부터 JWT 키를 받아와야 함
 //이때 계정 이름과 비밀번호를 이용함
 try
@@ -28,10 +31,12 @@ try
     };
     var body = new { Username = consettings["Username"], Password = consettings["Password"] };
     var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-    var response = await client.PostAsync("/api/users/server/findsecret", content);
+    var response = await client.PostAsync("/api/servers/initialize", content);
     if (!response.IsSuccessStatusCode)
-        throw new Exception($"POST operation failed. Error: {await  response.Content.ReadAsStringAsync()}");
-    tokenkeysettings.Secret = await response.Content.ReadAsStringAsync();
+        throw new Exception($"POST operation failed. Error: {await response.Content.ReadAsStringAsync()}");
+    var initdata = await response.Content.ReadFromJsonAsync<InitData>() ?? throw new Exception("Wrong Data Format Recieved");
+    tokenkeysettings.Secret = initdata.Secret;
+    entrancesettings.SettingsList = initdata.EntrancePolicy;
 }
 catch (Exception ex)
 {
@@ -49,6 +54,7 @@ builder.Services.AddSignalR().AddHubOptions<GameHub>(options =>
 builder.Services.AddHostedService<TimerHostedService>();
 builder.Services.AddSingleton<IGameDataService, GameDataService>();
 builder.Services.AddSingleton<IPosterService, PosterService>();
+builder.Services.AddSingleton<EntranceSettings>(entrancesettings);
 var MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
 var corsoriginsstring = builder.Configuration.GetValue<string>("CORSOrigins") ?? "";
 //Remove After React project goes in static files

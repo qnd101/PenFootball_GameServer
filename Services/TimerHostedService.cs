@@ -76,7 +76,7 @@ namespace PenFootball_GameServer.Services
                     await Task.WhenAll(frames.Select(item => scopedcontext.Clients.Client(item.conid).SendAsync("UpdateFrame", item.Item2)));
                     await Task.WhenAll(outputs.Select(item =>
                         (funcnamefromoutput(item.output) is string str) ? scopedcontext.Clients.Client(item.conid).SendAsync(str, item.output) : Task.CompletedTask));
-                    await Task.WhenAll(results.Select(item => _poster.PostJSON("api/gameresult", item)));
+                    await Task.WhenAll(results.Select(item => _poster.PostJSON("api/servers/gameresult", item)));
                 }
                 foreach (var gameid in _gamedata.AllGameIDs())
                     _gamedata.FlushOutputs(gameid);

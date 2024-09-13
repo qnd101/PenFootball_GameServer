@@ -12,10 +12,12 @@ namespace PenFootball_GameServer.Hubs
     {
         private ILogger<GameHub> _logger;
         private IGameDataService _gamedata;
-        public GameHub(ILogger<GameHub> logger, IGameDataService gamedata)
+        private EntranceSettings _entrancesettings;
+        public GameHub(ILogger<GameHub> logger, IGameDataService gamedata, EntranceSettings entranceSettings)
         {
             _logger = logger;
             _gamedata = gamedata;
+            _entrancesettings = entranceSettings;
         }
 
         public async Task KeyEvent(string eventtype, string keytype)
@@ -71,23 +73,31 @@ namespace PenFootball_GameServer.Hubs
         public override Task OnConnectedAsync()
         {
             _logger.LogInformation($"Connection between ID: {Context.ConnectionId} Initiated");
-            if (int.TryParse(Context.User?.FindFirst(c => c.Type == "sub")?.Value, out int id))
-            {
-                _logger.LogInformation($"ID : {id} found from token");
-                Context.Items.Add("Id", id);
-            }
-            else
+
+            var logstr = "";
+            if (!int.TryParse(Context.User?.FindFirst(c => c.Type == "sub")?.Value, out int id))
                 throw new HubException("Invalid Token!");
+            var email = Context.User?.FindFirst(c => c.Type == "email")?.Value ?? throw new HubException("Invalid Token!");
+            _logger.LogInformation($"ID = {id}, Email = {email} found from token");
+            Context.Items.Add("ID", id);
+
+            if (!_entrancesettings.Validate(new Dictionary<string, string>()
+            {
+                { "ID", id.ToString() },
+                { "Email", email }
+            }))
+                throw new HubException("You are not allowed in this server!!");
             return base.OnConnectedAsync();
         }
 
         private int getID()
         {
-            if (Context.Items["Id"] is int id)
+            if (Context.Items["ID"] is int id)
                 return id;
             else
-                throw new HubException("Something went wrong. Id not found");
+                throw new HubException($"Something went wrong. ID not found");
         }
+
 
         public override Task OnDisconnectedAsync(Exception? exception)
         {

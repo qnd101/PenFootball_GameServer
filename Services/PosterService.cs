@@ -24,7 +24,7 @@ namespace PenFootball_GameServer.Services
             _httpClient = new HttpClient()
             {
                 BaseAddress = new Uri(conSettngs.Value.Path),
-            }; ;
+            }; 
             _logger = logger;
         }
         public async Task<bool> PostJSON(string endpoint, object data)
