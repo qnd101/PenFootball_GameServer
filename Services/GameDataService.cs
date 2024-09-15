@@ -252,10 +252,19 @@ namespace PenFootball_GameServer.Services
                     return result;
                 var orderedline = snapshot.OrderBy(x => x.rating).ToList();
 
+                var skipindex = -1;
+                //홀수명이면 랜덤하게 한명 제외
+                if (orderedline.Count > 1 && orderedline.Count %2 ==1) 
+                    skipindex = (new Random()).Next(orderedline.Count);
+
                 for (int i = 0; i+1 < orderedline.Count(); i += 2)
                 {
                     Interlocked.Increment(ref _gameidcounter);
+                    if (i == skipindex)
+                        i++;
                     string conid1 = orderedline[i].conid;
+                    if (i+1 == skipindex)
+                        i++;
                     string conid2 = orderedline[i + 1].conid;
                     int dbid1 = _dbiddata[conid1];
                     int dbid2 = _dbiddata[conid2];
