@@ -35,7 +35,10 @@ namespace PenFootball_GameServer.Hubs
 
         public async Task EnterNormGame(int rating)
         {
-            if (!_entrancesettings.Validate(Context.Items.ToDictionary()))
+            if (!_entrancesettings.Validate(Context.Items.ToDictionary(
+                kvp => kvp.Key?.ToString() ?? string.Empty,
+                kvp => kvp.Value?.ToString() ?? string.Empty
+            )))
                 throw new HubException("You are not allowed in this server!!");
 
             var conid = Context.ConnectionId;
