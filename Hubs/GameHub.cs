@@ -35,6 +35,9 @@ namespace PenFootball_GameServer.Hubs
 
         public async Task EnterNormGame(int rating)
         {
+            if (!_entrancesettings.Validate(Context.Items.ToDictionary()))
+                throw new HubException("You are not allowed in this server!!");
+
             var conid = Context.ConnectionId;
 
             if (conid == null)
@@ -80,13 +83,7 @@ namespace PenFootball_GameServer.Hubs
             var email = Context.User?.FindFirst(c => c.Type == "email")?.Value ?? throw new HubException("Invalid Token!");
             _logger.LogInformation($"ID = {id}, Email = {email} found from token");
             Context.Items.Add("ID", id);
-
-            if (!_entrancesettings.Validate(new Dictionary<string, string>()
-            {
-                { "ID", id.ToString() },
-                { "Email", email }
-            }))
-                throw new HubException("You are not allowed in this server!!");
+            Context.Items.Add("Email", id);
             return base.OnConnectedAsync();
         }
 
