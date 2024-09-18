@@ -6,7 +6,8 @@
     {
         None,
         Training,
-        NormGame
+        NormGame,
+        TwoVTwoGame
     }
 
     //플레이어의 상태를 다루기 위한 타입들
@@ -53,6 +54,26 @@
             OppID = oppid;
             PlayerType = playertype;
             GameID = gameid;
+        }
+    }
+
+    public class TwoVTwoGameState : IPlayerState
+    {
+        public GameType GameType { get => GameType.TwoVTwoGame; }
+        //1,2,3,4
+        public int PlayerType { get; set; } 
+        //1, 2
+        public int SideType { get; set; }
+        public string[] PlayerConIds { get; set; }
+
+        public int GameID { get; set; }
+
+        public TwoVTwoGameState(int playerType, string[] playerConIds, int gameID)
+        {
+            PlayerType = playerType;
+            SideType = playerType % 2 == 0 ? 2 : 1;
+            PlayerConIds = playerConIds;
+            GameID = gameID;
         }
     }
 }

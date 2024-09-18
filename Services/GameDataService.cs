@@ -14,7 +14,7 @@ namespace PenFootball_GameServer.Services
         //ConID와 DBID 사이 왔다갔다
         string? GetConID(int id);
         int? GetDBID(string conid);
-        IEnumerable<string> AllConIDs ();
+        IEnumerable<string> AllConIDs();
         IEnumerable<int> AllGameIDs();
 
         //플레이어 상태 가져오기 / 게임 상태 가져오기
@@ -27,16 +27,17 @@ namespace PenFootball_GameServer.Services
         //플레이어 추가/제거 (Double connection이면 아무 작업도 안하도록)
         void EnterTrain(string conid, int dbid); 
         void EnterNormGame (string conid, int dbid, int rating);
+        void EnterTwoVTwo (string conid, int dbid, int rating);
 
         //출력
-        Frame? GetFrame(string conid);
+        object? GetFrame(string conid);
         IEnumerable<IGameOutput> GetOutputs (string conid); //단발성 아웃풋
         void FlushOutputs(int gameid);
         IEnumerable<GameResultData> GetGameResults(); //Post를 위한 데이터
 
         //업데이트
         //매치 메이킹 -> 생성된 ID 쌍들을 반환
-        IEnumerable<(string conid1, string conid2, int id1, int id2)> MakeMatches(float dt);
+        void MakeMatches(float dt);
         void Update(float dt);
 
         //void AddEvent(int gameid, IGameEvent gameEvent);
@@ -52,8 +53,10 @@ namespace PenFootball_GameServer.Services
     {
         private ImmutableDictionary<int, (NormGame Game, string Player1ID, string Player2ID)> _roomdata_normgame;
         private ImmutableDictionary<int, (TrainGame Game, string PlayerID)> _roomdata_train;
-        
+        private ImmutableDictionary<int, (TwoVTwoGame Game, string[] PlayerIDs)> _roomdata_twovtwo;
+
         private ImmutableList<(string conid, int rating)> _waitline_normgame;
+        private ImmutableList<(string conid, int rating)> _waitline_twovtwo;
 
         //Data of Currently Playing/Waiting players
         private ImmutableDictionary<string, int> _dbiddata;
@@ -62,20 +65,30 @@ namespace PenFootball_GameServer.Services
 
         private int _gameidcounter = 0;
         private float _normgamematchcounter = 10;
-        private const float normgametimeout = 10;
-        List<int> _removelist = new();
-        object removelistlock = new();
+        private static float normgametimeout = 10;
+        List<int> _removelistnorm = new();
+        List<int> _removelisttvt = new();
+
+        List<int> _madematches = new();
+
+        private float _gamepreviewtime = 2;
+
+        private float _waitoutputconter = 0.5f;
+        private static float _waitoutputtimeout = 0.5f;
 
         public GameDataService(ILogger<GameDataService> logger)
         {
             _logger = logger;
             _roomdata_normgame = ImmutableDictionary<int, (NormGame, string, string)>.Empty;
             _roomdata_train = ImmutableDictionary<int, (TrainGame, string)>.Empty;
+            _roomdata_twovtwo = ImmutableDictionary<int, (TwoVTwoGame, string[])>.Empty;
+
             _waitline_normgame = ImmutableList<(string, int)>.Empty;
+            _waitline_twovtwo = ImmutableList<(string, int)>.Empty;
             _dbiddata = ImmutableDictionary<string, int>.Empty;
         }
 
-        public string? GetConID (int id)
+        public string? GetConID(int id)
         {
             var items = _dbiddata.Where(item => item.Value == id);
             if (items.Any())
@@ -83,22 +96,24 @@ namespace PenFootball_GameServer.Services
             return null;
         }
 
-        public int? GetDBID (string conid)
+        public int? GetDBID(string conid)
         {
-            if(_dbiddata.Keys.Contains(conid))
+            if (_dbiddata.Keys.Contains(conid))
                 return _dbiddata[conid];
             return null;
         }
 
         public IEnumerable<string> AllConIDs() => _dbiddata.Keys;
-        public IEnumerable<int> AllGameIDs() => _roomdata_normgame.Keys.Concat(_roomdata_train.Keys);
+        public IEnumerable<int> AllGameIDs() => _roomdata_normgame.Keys.Concat(_roomdata_train.Keys).Concat(_roomdata_twovtwo.Keys);
 
         public IPlayerState? GetPlayerState(string conid)
         {
             if (_waitline_normgame.Any(x => x.conid == conid))
                 return new WaitingState(GameType.NormGame);
+            else if (_waitline_twovtwo.Any(x => x.conid == conid))
+                return new WaitingState(GameType.TwoVTwoGame);
 
-            foreach(var item in _roomdata_train)
+            foreach (var item in _roomdata_train)
             {
                 if (item.Value.PlayerID == conid)
                     return new TrainingState(item.Key);
@@ -110,6 +125,16 @@ namespace PenFootball_GameServer.Services
                     return new NormGameState(item.Value.Player2ID, 1, item.Key);
                 else if (item.Value.Player2ID == conid)
                     return new NormGameState(item.Value.Player1ID, 2, item.Key);
+            }
+
+            foreach (var item in _roomdata_twovtwo)
+            {
+                var whichplayer = Array.FindIndex<string>(item.Value.PlayerIDs, (x => x == conid)) + 1;
+                if (whichplayer > 0)
+                {
+                    return new TwoVTwoGameState(whichplayer, item.Value.PlayerIDs, item.Key);
+                }
+
             }
 
             return null;
@@ -127,6 +152,11 @@ namespace PenFootball_GameServer.Services
                     var ev2 = new KeyEvent(ns.PlayerType, keytype, eventtype);
                     _roomdata_normgame[ns.GameID].Game.EventQueue.Enqueue(ev2);
                     break;
+                case TwoVTwoGameState tvts:
+                    var ev3 = new KeyEvent(tvts.PlayerType, keytype, eventtype);
+                    _roomdata_twovtwo[tvts.GameID].Game.EventQueue.Enqueue(ev3);
+                    break;
+
             }
         }
 
@@ -146,6 +176,7 @@ namespace PenFootball_GameServer.Services
         {
             if (!register(conid, playerid))
                 return;
+            ExitInput(conid);
             Interlocked.Increment(ref _gameidcounter);
             ImmutableInterlocked.TryAdd(ref _roomdata_train, _gameidcounter, (new TrainGame(), conid));
             _logger.LogInformation($"Train Game of ID: {_gameidcounter} Created by ID: {conid}({playerid})");
@@ -153,11 +184,21 @@ namespace PenFootball_GameServer.Services
 
         public void EnterNormGame(string conid, int dbid, int rating)
         {
-            if(!register(conid, dbid))
+            if (!register(conid, dbid))
                 return;
-
+            ExitInput(conid);
             ImmutableInterlocked.Update(ref _waitline_normgame, (_waitline) => _waitline.Add((conid, rating)));
             _logger.LogInformation($"Player of ID: {conid}({dbid}) waiting for norgame");
+        }
+
+        public void EnterTwoVTwo(string conid, int dbid, int rating)
+        {
+            if (!register(conid, dbid))
+                return;
+            ExitInput(conid);
+
+            ImmutableInterlocked.Update(ref _waitline_twovtwo, (_waitline) => _waitline.Add((conid, rating)));
+            _logger.LogInformation($"Player of ID: {conid}({dbid}) waiting for 2v2 ({_waitline_twovtwo.Count}/4)");
         }
 
         //Before calling this method, one needs to be sure that the player is not in any game or waitingline
@@ -170,7 +211,7 @@ namespace PenFootball_GameServer.Services
 
         public void ExitInput(string conid)
         {
-            switch(GetPlayerState(conid))
+            switch (GetPlayerState(conid))
             {
                 case WaitingState ws:
                     //지금 상황에서 waitline은 normgame 뿐
@@ -185,11 +226,14 @@ namespace PenFootball_GameServer.Services
                 case NormGameState ns:
                     _roomdata_normgame[ns.GameID].Game.EventQueue.Enqueue(new ExitEvent(ns.PlayerType));
                     break;
+                case TwoVTwoGameState tvts:
+                    _roomdata_twovtwo[tvts.GameID].Game.EventQueue.Enqueue(new ExitEvent(tvts.PlayerType));
+                    break;
             }
         }
 
         //conid에게 보이는 시야를 가져옴
-        public Frame? GetFrame(string conid)
+        public object? GetFrame(string conid)
         {
             switch (GetPlayerState(conid))
             {
@@ -197,6 +241,8 @@ namespace PenFootball_GameServer.Services
                     return _roomdata_train[ts.GameID].Game.GetFrame();
                 case NormGameState ns:
                     return _roomdata_normgame[ns.GameID].Game.GetFrame(ns.PlayerType);
+                case TwoVTwoGameState tvts:
+                    return _roomdata_twovtwo[tvts.GameID].Game.GetFrame(tvts.SideType);
                 default:
                     return null;
             }
@@ -205,23 +251,51 @@ namespace PenFootball_GameServer.Services
         {
             switch (GetPlayerState(conid))
             {
-                case NormGameState ns:                  
-                    return _roomdata_normgame[ns.GameID].Game.GetOutputs(ns.PlayerType);
-                    
+                case WaitingState ws:
+                    if (_waitoutputconter < 0)
+                    {
+                        if (ws.WaitingFor==GameType.NormGame)
+                            return new List<IGameOutput> { new WaitingInfoOutput(GameType.NormGame, _waitline_normgame.Count) };
+                        if (ws.WaitingFor==GameType.TwoVTwoGame)
+                            return new List<IGameOutput> { new WaitingInfoOutput(GameType.TwoVTwoGame, _waitline_twovtwo.Count) };
+                    }
+                    return Enumerable.Empty<IGameOutput>();
+                case NormGameState ns:
+                    var mygame = _roomdata_normgame[ns.GameID];
+                    var temp = mygame.Game.GetOutputs(ns.PlayerType);
+                    if (_madematches.Contains(ns.GameID))
+                    {
+                        IGameOutput output = new GameFoundOutput(GameType.NormGame, new int[] { _dbiddata[mygame.Player1ID], _dbiddata[mygame.Player2ID] });
+                        if (ns.PlayerType == 2)
+                            output = output.Flip();
+                        return temp.Append(output);
+                    }
+                    return temp;
                 case TrainingState ts:
                     return _roomdata_train[ts.GameID].Game.GetOutputs();
+                case TwoVTwoGameState tvts:
+                    var mygame2 = _roomdata_twovtwo[tvts.GameID];
+                    var temp2 = mygame2.Game.GetOutputs(tvts.SideType);
+                    if (_madematches.Contains(tvts.GameID))
+                    {
+                        IGameOutput output = new GameFoundOutput(GameType.TwoVTwoGame, tvts.PlayerConIds.Select(item => _dbiddata[item]).ToArray());
+                        if(tvts.SideType == 2)
+                            output = output.Flip();
+                        return temp2.Append(output);
+                    }
+                    return temp2;
                 default:
-                    return new List<IGameOutput>();
+                    return Enumerable.Empty<IGameOutput>();
             }
         }
 
-        //모든 끝난 게임들의 결과를 가져옴
+        //모든 끝난 게임들의 결과를 가져옴 (랭킹에 반영되는)
         public IEnumerable<GameResultData> GetGameResults()
         {
             List<GameResultData> results = new();
             foreach (var item in _roomdata_normgame.Values)
             {
-                if (item.Game.GetOutputs(1).FirstOrDefault(x=>x is GameEndOutput) is GameEndOutput go)
+                if (item.Game.GetOutputs(1).FirstOrDefault(x => x is GameEndOutput) is GameEndOutput go)
                     results.Add(new GameResultData(_dbiddata[item.Player1ID], _dbiddata[item.Player2ID], go.Winner));
             }
             return results;
@@ -229,27 +303,59 @@ namespace PenFootball_GameServer.Services
 
         public void FlushOutputs(int gameid)
         {
-            if(_roomdata_normgame.Keys.Contains(gameid))
+            if (_roomdata_normgame.Keys.Contains(gameid))
             {
                 _roomdata_normgame[gameid].Game.FlushOutputs();
             }
-            else if(_roomdata_train.Keys.Contains(gameid))
+            else if (_roomdata_train.Keys.Contains(gameid))
             {
                 _roomdata_train[gameid].Game.FlushOutputs();
             }
+            else if (_roomdata_twovtwo.Keys.Contains(gameid))
+            {
+                _roomdata_twovtwo[gameid].Game.FlushOutputs();
+            }
+            _madematches = new List<int>();
         }
 
-        public IEnumerable<(string, string, int, int)> MakeMatches(float dt)
+        private static void Swap<T>(T[] array, int index1, int index2)
         {
-            _normgamematchcounter -= dt;
-            var result = new List<(string, string, int, int)>();
+            var temp = array[index1];
+            array[index1] = array[index2];
+            array[index2] = temp;
+        }
+
+        public void MakeMatches(float dt)
+        {
+            //match 2v2 
+            if(_waitline_twovtwo.Count >= 4)
+            {
+                var interest = _waitline_twovtwo.Take(4).OrderBy(item=>item.rating);
+                var conids = interest.Select(item => item.conid).ToArray();
+                //제일 높은 놈과 낮은 놈이 한팀
+                Swap(conids, 2, 3); 
+                var random = (new Random()).Next(4);
+
+                //랜덤하게 역할을 할당
+                if (random > 2)
+                    Swap(conids, 0, 2);
+                if (random % 2 == 0)
+                    Swap(conids, 1, 3);
+
+                Interlocked.Increment(ref _gameidcounter);
+                var newgame = new TwoVTwoGame();
+                ImmutableInterlocked.TryAdd(ref _roomdata_twovtwo, _gameidcounter, (newgame, conids));
+                ImmutableInterlocked.Update(ref _waitline_twovtwo, line => line.RemoveAll(item => conids.Contains(item.conid)));
+                _madematches.Add(_gameidcounter);
+            }
+
             if (_normgamematchcounter < 0)
             {
                 _normgamematchcounter = normgametimeout;
                 var snapshot = _waitline_normgame; //현재 스냅숏. 얘는 원래꺼가 바뀌어도 변형되지 않음
 
                 if (snapshot.Count < 2)
-                    return result;
+                    return;
                 var orderedline = snapshot.OrderBy(x => x.rating).ToList();
 
                 var skipindex = -1;
@@ -272,48 +378,71 @@ namespace PenFootball_GameServer.Services
                     if (ImmutableInterlocked.Update(ref _waitline_normgame, li => li.RemoveAll(val => val.conid == conid1))
                         && ImmutableInterlocked.Update(ref _waitline_normgame, li => li.RemoveAll(val => val.conid == conid2)))
                     {
-                        result.Add((conid1, conid2, dbid1, dbid2));
-                        ImmutableInterlocked.TryAdd(ref _roomdata_normgame, _gameidcounter, (new NormGame(), conid1, conid2));
+                        _madematches.Add(_gameidcounter);
+                        ImmutableInterlocked.TryAdd(ref _roomdata_normgame, _gameidcounter, (new NormGame(_gamepreviewtime), conid1, conid2));
                         _logger.LogInformation($"Game of ID: {_gameidcounter} Created between ID: {conid1}({dbid1}) & ID: {conid2}({dbid2})");
                     }
                 }
             }
-            return result;
         }
 
         //업데이트
         public void Update(float dt)
         {
-            lock (removelistlock)
+            if (_waitoutputconter < 0)
+                _waitoutputconter = _waitoutputtimeout;
+            _normgamematchcounter -= dt;
+            _waitoutputconter -= dt;
+
+            foreach (var gameid in _removelistnorm)
             {
-                foreach (var gameid in _removelist)
+                try
                 {
-                    try
-                    {
-                        _logger.LogInformation($"GameID = {gameid} Disposed");
-                        string cid1 = _roomdata_normgame[gameid].Player1ID, cid2 = _roomdata_normgame[gameid].Player2ID;
-                        ImmutableInterlocked.TryRemove(ref _roomdata_normgame, gameid, out _);
-                        unregister(cid1);
-                        unregister(cid2);
-                    }
-                    finally
-                    {
-                        _removelist = new();
-                    }
+                    _logger.LogInformation($"GameID = {gameid} Disposed");
+                    string cid1 = _roomdata_normgame[gameid].Player1ID, cid2 = _roomdata_normgame[gameid].Player2ID;
+                    ImmutableInterlocked.TryRemove(ref _roomdata_normgame, gameid, out _);
+                    unregister(cid1);
+                    unregister(cid2);
                 }
+                finally
+                {
+                    _removelistnorm = new();
+                }
+            }
+
+            foreach (var gameid in _removelisttvt)
+            {
+                try
+                {
+                    _logger.LogInformation($"GameID = {gameid} Disposed");
+                    string[] cids = _roomdata_twovtwo[gameid].PlayerIDs;
+                    ImmutableInterlocked.TryRemove(ref _roomdata_twovtwo, gameid, out _);
+                    foreach (var cid in cids) 
+                        unregister(cid);
+                }
+                finally
+                {
+                    _removelisttvt = new();
+                }
+            }
 
 
-                foreach (var (gameid, item) in _roomdata_train)
-                {
-                    item.Game.Update(dt); //얘는 플레이어가 나가면 바로 처리됨. 여기서 다룰 필요 없음
-                }
+            foreach (var (gameid, item) in _roomdata_train)
+            {
+                item.Game.Update(dt); //얘는 플레이어가 나가면 바로 처리됨. 여기서 다룰 필요 없음
+            }
 
-                foreach (var (gameid, item) in _roomdata_normgame)
-                {
-                    item.Game.Update(dt);
-                    if (item.Game.GetOutputs(1).Any(var => var is GameEndOutput))
-                        _removelist.Add(gameid);
-                }
+            foreach (var (gameid, item) in _roomdata_normgame)
+            {
+                item.Game.Update(dt);
+                if (item.Game.GetOutputs(1).Any(var => var is GameEndOutput))
+                    _removelistnorm.Add(gameid);
+            }
+            foreach(var (gameid, item) in _roomdata_twovtwo)
+            {
+                item.Game.Update(dt);
+                if (item.Game.GetOutputs(1).Any(var => var is GameEndOutput))
+                    _removelisttvt.Add(gameid);
             }
         }
     }

@@ -33,14 +33,19 @@ namespace PenFootball_GameServer.Hubs
             _gamedata.KeyInput(conid, key, keyeventtype);   
         }
 
-        public async Task EnterNormGame(int rating)
+        private Task validateEntrance()
         {
             if (!_entrancesettings.Validate(Context.Items.ToDictionary(
                 kvp => kvp.Key?.ToString() ?? string.Empty,
                 kvp => kvp.Value?.ToString() ?? string.Empty
             )))
                 throw new HubException("You are not allowed in this server!!");
+            return Task.CompletedTask;
+        }
 
+        public async Task EnterNormGame(int rating)
+        {
+            await validateEntrance();
             var conid = Context.ConnectionId;
 
             if (conid == null)
@@ -56,6 +61,26 @@ namespace PenFootball_GameServer.Hubs
             }
 
             _gamedata.EnterNormGame(conid, getID(), rating);
+        }
+        public async Task EnterTwoVTwo(int rating)
+        {
+            await validateEntrance();
+
+            var conid = Context.ConnectionId;
+
+            if (conid == null)
+                return;
+            var dbid = getID();
+            _logger.LogInformation($"ID: {Context.ConnectionId}({dbid}) entering 2 vs 2");
+
+            //check for double connection
+            if (_gamedata.GetConID(dbid) != null)
+            {
+                _logger.LogInformation($"ID: {Context.ConnectionId}({dbid}) rejected for double connection while entering 2 vs 2");
+                throw new HubException("Double Connection not allowed!");
+            }
+
+            _gamedata.EnterTwoVTwo(conid, getID(), rating);
         }
 
         public async Task EnterTraining()

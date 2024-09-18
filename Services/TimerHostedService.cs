@@ -50,6 +50,10 @@ namespace PenFootball_GameServer.Services
                     return "Chat";
                 case ScoreOutput:
                     return "Score";
+                case WaitingInfoOutput:
+                    return "WaitingInfo";
+                case GameFoundOutput:
+                    return "GameFound";
             }
             return null;
         }
@@ -59,7 +63,7 @@ namespace PenFootball_GameServer.Services
             stopwatch.Start();
             //나중에 Asynchronous한 작업으로 수정하는 것도 좋을 듯. 
             try {        
-            var madematches = _gamedata.MakeMatches(Interval);
+                _gamedata.MakeMatches(Interval);
                 _gamedata.Update(Interval);
                 var frames = _gamedata.AllConIDs().Select(conid => (conid, _gamedata.GetFrame(conid))).Where(x => x.Item2 != null);
                 var outputs = _gamedata.AllConIDs().SelectMany(conid => _gamedata.GetOutputs(conid).Select(output => (conid, output)));
@@ -68,11 +72,6 @@ namespace PenFootball_GameServer.Services
                 {
                     var scopedcontext = scope.ServiceProvider.GetRequiredService<IHubContext<GameHub>>();
 
-                    await Task.WhenAll(madematches.Select(async item =>
-                    {
-                        await scopedcontext.Clients.Client(item.conid1).SendAsync("GameFound", item.id2);
-                        await scopedcontext.Clients.Client(item.conid2).SendAsync("GameFound", item.id1);
-                    }));
                     await Task.WhenAll(frames.Select(item => scopedcontext.Clients.Client(item.conid).SendAsync("UpdateFrame", item.Item2)));
                     await Task.WhenAll(outputs.Select(item =>
                         (funcnamefromoutput(item.output) is string str) ? scopedcontext.Clients.Client(item.conid).SendAsync(str, item.output) : Task.CompletedTask));

@@ -14,9 +14,9 @@ namespace PenFootball_GameServer.Services
 
     public class PreviewOutput : IGameOutput
     {
-        public GameConfigJson Config { get; set; } //Config에 포함된 기하적 데이터는 게임 시작 시에 딱 한번만 보내면 됨
+        public GeoConfigJson Config { get; set; } //Config에 포함된 기하적 데이터는 게임 시작 시에 딱 한번만 보내면 됨
 
-        public PreviewOutput(GameConfigJson configJson)
+        public PreviewOutput(GeoConfigJson configJson)
         {
             Config = configJson;
         }
@@ -69,5 +69,37 @@ namespace PenFootball_GameServer.Services
         }
 
         public IGameOutput Flip() => new ChatOutput(3 - Who, Message);
+    }
+
+    public class GameFoundOutput : IGameOutput
+    {
+        public GameType WhichGame { get; set; }
+        public int[] IDs { get; set; }
+
+        public GameFoundOutput(GameType whichgame,  int[] ids) { 
+            WhichGame = whichgame;
+            IDs = ids;
+        }
+        private static int[] flipoddeven(int[] basearr)
+        {
+            var result = new int[basearr.Length];
+            for (int i = 0; i < basearr.Length; i += 2)
+            {
+                result[i] = basearr[i + 1];
+                result[i+1] = basearr[i];
+            }
+            return result;
+        }
+        public IGameOutput Flip() => new GameFoundOutput(WhichGame, flipoddeven(IDs));
+    }
+
+    public class WaitingInfoOutput : IGameOutput
+    {
+        public GameType WhichGame { get; set; }
+        public int WaitCount { get; set; }
+
+        public WaitingInfoOutput(GameType whichgame, int waitcount) { WhichGame = whichgame; WaitCount = waitcount; }
+
+        public IGameOutput Flip() => this;
     }
 }

@@ -34,15 +34,15 @@ namespace PenFootball_GameServer.GameLogic
 
     public class Player
     {
-        public Vector2 Pos { get; private set; } = new Vector2();
-        public Vector2 Vel { get; private set; } = new Vector2();
+        public Vector2 Pos { get; set; } = new Vector2();
+        public Vector2 Vel { get; set; } = new Vector2();
         public KeyState KeyState { get; set; } = new KeyState();
         public bool IsOnGround { get; set; } = false;
         public int LeftJumps { get; set; } = 0;
         public (float lefttime, int pressedkey) DashData { get; set; } = (0, 9);
         public float LeftDashCoolTime { get; set; } = 0;
 
-        private const float eps = 0.001f;
+        protected const float eps = 0.001f;
 
         public void Reset(Vector2 spawn)
         { 
@@ -54,7 +54,7 @@ namespace PenFootball_GameServer.GameLogic
             LeftDashCoolTime = 0;
         }   
 
-        public void Update(float dt, GameConfig config)
+        public void Update(float dt, PhysConfig config)
         {
             var acc = 0;
             if (KeyState.KeyDict[GameKey.Left])
@@ -63,7 +63,6 @@ namespace PenFootball_GameServer.GameLogic
                 acc += 1;
 
             Vel += Vector2.UnitX * acc * config.PlayerAcc * dt;
-
 
             Vel -= (config.PlayerDamp * Vel.X * dt) * Vector2.UnitX;
 
@@ -90,15 +89,17 @@ namespace PenFootball_GameServer.GameLogic
             else
                 IsOnGround = false;
 
-            if (Pos.X - config.PlayerRadius < 0)
+            float minx = config.PlayerRadius, maxx = config.Width - config.PlayerRadius;
+
+            if (Pos.X  < minx)
             {
-                Pos = new Vector2(config.PlayerRadius + eps, Pos.Y);
+                Pos = new Vector2(minx + eps, Pos.Y);
                 Vel = new Vector2(0, Vel.Y);
             }
 
-            if (Pos.X + config.PlayerRadius > config.Width)
+            if (Pos.X > maxx)
             {
-                Pos = new Vector2(config.Width - config.PlayerRadius - eps, Pos.Y);
+                Pos = new Vector2(maxx - eps, Pos.Y);
                 Vel = new Vector2(0, Vel.Y);
             }
 
@@ -166,7 +167,7 @@ namespace PenFootball_GameServer.GameLogic
             Vel = Vector2.Zero;
         }
 
-        public void Update(float dt, IEnumerable<Player> players, GameConfig config)
+        public void Update(float dt, IEnumerable<Player> players, PhysConfig config)
         {
             Vel -= config.Gravity * dt * Vector2.UnitY;
             Vel -= Vel.X * dt * config.BallDamp * Vector2.UnitX;
@@ -216,65 +217,15 @@ namespace PenFootball_GameServer.GameLogic
             }
         }
     }
-    public class TrainGame
+
+    //config data about the game
+    public class NormGameConfig
     {
-        public ConcurrentQueue<IGameEvent> EventQueue { get; } = new ConcurrentQueue<IGameEvent>();
-        public Player Player { get; private set; } = new Player();
-
-        public Ball BallObj { get; } = new Ball();
-
-        public GameConfig Config { get; }
-
-        public bool GivePreview { get; }
-
-        private bool _outputflushed = false;
-
-        public TrainGame()
-        {
-            Config = GameConfig.Rescale(GameConfig.ClassicConfig(), 1f, 0.027f);
-            ResetRound();
-        }
-        private void ResetRound()
-        {
-            Player.Reset(Config.Spawn1);
-            BallObj.Reset(Config.BallSpawn);
-        }
-
-        public void Update(float dt)
-        {
-            Player.KeyState.ResetKeyUpDown();
-
-            while (EventQueue.TryDequeue(out var item))
-            {
-                if (item is KeyEvent ke)
-                {
-                    Player.KeyState.Update(ke);
-                }
-            }
-
-            Player.Update(dt, Config);
-            BallObj.Update(dt, new List<Player> { Player }, Config);
-
-            if (BallObj.Pos.X < Config.GoalWidth - Config.BallRadius && BallObj.Pos.Y < Config.GoalHeight + Config.BallRadius)
-            {
-                ResetRound();
-            }
-            else if (BallObj.Pos.X > Config.Width - Config.GoalWidth + Config.BallRadius && BallObj.Pos.Y < Config.GoalHeight + Config.BallRadius)
-            {
-                ResetRound();
-            }
-        }
-
-        public Frame GetFrame()
-        {
-            return new Frame(VectorForJSON.FromVec2(Player.Pos), new VectorForJSON(-100, 0), VectorForJSON.FromVec2(BallObj.Pos));
-        }
-        public IEnumerable<IGameOutput> GetOutputs() => _outputflushed? new List<IGameOutput>() : new List<IGameOutput> { new PreviewOutput(Config.GetConfigJson()) };
-
-        public void FlushOutputs()
-        {
-            _outputflushed = true;
-        }
+        public float PreviewTime { get; set; } = 3; //게임 시작까지 걸리는 시간
+        public int MaxScore { get; set; } = 10;
+        public Vector2 Spawn1 { get; set; } = new Vector2(30, 20);
+        public Vector2 Spawn2 { get; set; } = new Vector2(430, 20);
+        public Vector2 BallSpawn { get; set; } = new Vector2(230, 150);
     }
 
     public class NormGame
@@ -285,7 +236,8 @@ namespace PenFootball_GameServer.GameLogic
 
         public Ball BallObj { get; } = new Ball();
 
-        public GameConfig Config { get; }
+        public PhysConfig PhysConfig { get; }
+        public NormGameConfig GameConfig { get; } = new NormGameConfig();   
 
         public int Score1 { get; private set; } = 0;
         public int Score2 { get; private set; } = 0;    
@@ -293,20 +245,23 @@ namespace PenFootball_GameServer.GameLogic
         public Player[] Players { get; }
         public ConcurrentQueue<IGameOutput> OutputQueue { get; private set; } = new ConcurrentQueue<IGameOutput>();
 
-        public NormGame()
+        private float timecounter = 0;
+
+        public NormGame(float previewtime)
         {
+            this.GameConfig.PreviewTime = previewtime;  
             Players = new Player[2] { Player1, Player2 };
-            Config = GameConfig.Rescale(GameConfig.ClassicConfig(), 1f, 0.027f);
+            PhysConfig = PhysConfig.ClassicConfig();
+            TimeDimAttribute.Rescale(PhysConfig, 0.027f);
             ResetRound();
-            OutputQueue.Enqueue(new PreviewOutput(this.Config.GetConfigJson()));
-            OutputQueue.Enqueue(new ScoreOutput(Score1, Score2));
+            OutputQueue.Enqueue(new PreviewOutput(this.PhysConfig.GetConfigJson()));
         }
 
         private void ResetRound()
         {
-            Player1.Reset(Config.Spawn1);
-            Player2.Reset(Config.Spawn2);
-            BallObj.Reset(Config.BallSpawn);
+            Player1.Reset(GameConfig.Spawn1);
+            Player2.Reset(GameConfig.Spawn2);
+            BallObj.Reset(GameConfig.BallSpawn);
         }
 
         private GameKey flipKey(GameKey key)
@@ -321,6 +276,11 @@ namespace PenFootball_GameServer.GameLogic
 
         public void Update(float dt)
         {
+            if(timecounter < this.GameConfig.PreviewTime)
+            {
+                timecounter += dt;
+                return;
+            }
             Player1.KeyState.ResetKeyUpDown();
             Player2.KeyState.ResetKeyUpDown();
 
@@ -342,18 +302,18 @@ namespace PenFootball_GameServer.GameLogic
 
             foreach (var player in Players)
             {
-                player.Update(dt, Config);
+                player.Update(dt, PhysConfig);
             }
-            BallObj.Update(dt, Players, Config);
+            BallObj.Update(dt, Players, PhysConfig);
 
-            if (BallObj.Pos.X < Config.GoalWidth - Config.BallRadius && BallObj.Pos.Y < Config.GoalHeight + Config.BallRadius)
+            if (BallObj.Pos.X < PhysConfig.GoalWidth - PhysConfig.BallRadius && BallObj.Pos.Y < PhysConfig.GoalHeight + PhysConfig.BallRadius)
             {
                 Score2 += 1;
                 OutputQueue.Enqueue(new ScoreOutput(Score1, Score2));
                 if(!ChkGameEnd())
                     ResetRound();
             }
-            else if (BallObj.Pos.X > Config.Width - Config.GoalWidth + Config.BallRadius && BallObj.Pos.Y < Config.GoalHeight+Config.BallRadius)
+            else if (BallObj.Pos.X > PhysConfig.Width - PhysConfig.GoalWidth + PhysConfig.BallRadius && BallObj.Pos.Y < PhysConfig.GoalHeight+PhysConfig.BallRadius)
             {
                 Score1 += 1;
                 OutputQueue.Enqueue(new ScoreOutput(Score1, Score2));
@@ -363,20 +323,20 @@ namespace PenFootball_GameServer.GameLogic
         }
         private bool ChkGameEnd()
         {
-            if (Score1 >= Config.MaxScore)
+            if (Score1 >= GameConfig.MaxScore)
             {
                 var addstr = "";
-                if (Score2 == Config.MaxScore - 1)
+                if (Score2 == GameConfig.MaxScore - 1)
                     addstr = " after a fierce battle";
-                OutputQueue.Enqueue(new GameEndOutput($"*1* reached {Config.MaxScore} points{addstr}.", 1));
+                OutputQueue.Enqueue(new GameEndOutput($"*1* reached {GameConfig.MaxScore} points{addstr}.", 1));
                 return true;
             }
-            if (Score2 >= Config.MaxScore)
+            if (Score2 >= GameConfig.MaxScore)
             {
                 var addstr = "";
-                if (Score1 == Config.MaxScore - 1)
+                if (Score1 == GameConfig.MaxScore - 1)
                     addstr = " after a fierce battle";
-                OutputQueue.Enqueue(new GameEndOutput($"*2* reached {Config.MaxScore} points{addstr}.", 2));
+                OutputQueue.Enqueue(new GameEndOutput($"*2* reached {GameConfig.MaxScore} points{addstr}.", 2));
                 return true;
             }
             return false;
@@ -385,7 +345,7 @@ namespace PenFootball_GameServer.GameLogic
         public Frame GetFrame(int who)
         {
             var fr = new Frame(VectorForJSON.FromVec2(Player1.Pos), VectorForJSON.FromVec2(Player2.Pos), VectorForJSON.FromVec2(BallObj.Pos));
-            return who == 1 ? fr : Frame.Flip(fr, Config.Width);
+            return who == 1 ? fr : Frame.Flip(fr, PhysConfig.Width);
         }
         public IEnumerable<IGameOutput> GetOutputs(int who)
         {
