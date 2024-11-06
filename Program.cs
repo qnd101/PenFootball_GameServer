@@ -55,6 +55,7 @@ builder.Services.AddHostedService<TimerHostedService>();
 builder.Services.AddSingleton<IGameDataService, GameDataService>();
 builder.Services.AddSingleton<IPosterService, PosterService>();
 builder.Services.AddSingleton<EntranceSettings>(entrancesettings);
+builder.Services.AddSingleton<IGlobalChatService, GlobalChatService>();
 var MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
 var corsoriginsstring = builder.Configuration.GetValue<string>("CORSOrigins") ?? "";
 //Remove After React project goes in static files

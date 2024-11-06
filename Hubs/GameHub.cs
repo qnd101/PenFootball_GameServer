@@ -3,9 +3,12 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using PenFootball_GameServer.GameLogic;
 using PenFootball_GameServer.Services;
+using System.Collections.Concurrent;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace PenFootball_GameServer.Hubs
 {
+    public record ChatObj(string name, string msg, string time);
 
     [Authorize]
     public class GameHub : Hub<IGameClient>
@@ -13,11 +16,29 @@ namespace PenFootball_GameServer.Hubs
         private ILogger<GameHub> _logger;
         private IGameDataService _gamedata;
         private EntranceSettings _entrancesettings;
-        public GameHub(ILogger<GameHub> logger, IGameDataService gamedata, EntranceSettings entranceSettings)
+        private IGlobalChatService _globalchatservice;
+
+        public GameHub(ILogger<GameHub> logger, IGameDataService gamedata, EntranceSettings entranceSettings, IGlobalChatService globalchatservice)
         {
             _logger = logger;
             _gamedata = gamedata;
             _entrancesettings = entranceSettings;
+            _globalchatservice = globalchatservice;
+        }
+
+        //결과에 따른 status code 반환
+        public async Task<int> GlobalChat(string msg)
+        {
+            string name = (Context.Items["Name"] as string) ?? throw (new HubException("Name not found"));
+            var result = _globalchatservice.AddChat(name, msg);
+            if(result == ChatResult.Success) 
+                await Clients.All.GlobalChat(new ChatObj(name, msg, $"{DateTime.Now.Hour}:{DateTime.Now.Minute}"));
+            return (int)result;
+        }
+
+        public async Task<ChatObj[]> GetGlobalChatCache()
+        {
+            return _globalchatservice.GetCache();
         }
 
         public async Task KeyEvent(string eventtype, string keytype)
@@ -35,10 +56,11 @@ namespace PenFootball_GameServer.Hubs
 
         private Task validateEntrance()
         {
-            if (!_entrancesettings.Validate(Context.Items.ToDictionary(
+            var data = Context.Items.ToDictionary(
                 kvp => kvp.Key?.ToString() ?? string.Empty,
-                kvp => kvp.Value?.ToString() ?? string.Empty
-            )))
+                kvp => kvp.Value?.ToString() ?? string.Empty);
+            _logger.LogInformation(string.Concat(data.Select(item => item.Key + ":" + item.Value + "\n")));
+            if (!_entrancesettings.Validate(data))
                 throw new HubException("You are not allowed in this server!!");
             return Task.CompletedTask;
         }
@@ -108,10 +130,15 @@ namespace PenFootball_GameServer.Hubs
             var logstr = "";
             if (!int.TryParse(Context.User?.FindFirst(c => c.Type == "sub")?.Value, out int id))
                 throw new HubException("Invalid Token!");
-            var email = Context.User?.FindFirst(c => c.Type == "email")?.Value ?? throw new HubException("Invalid Token!");
-            _logger.LogInformation($"ID = {id}, Email = {email} found from token");
+            string email = Context.User?.FindFirst(c => c.Type == "email")?.Value ?? throw new HubException("Invalid Token!");
+
+            string name = Context.User?.FindFirst(c => c.Type == JwtRegisteredClaimNames.Name)?.Value ?? throw new HubException("Invalid Token!");
+
+            _logger.LogInformation($"ID = {id}, Email = {email}, Name = {name} found from token");
+
             Context.Items.Add("ID", id);
-            Context.Items.Add("Email", id);
+            Context.Items.Add("Email", email);
+            Context.Items.Add("Name", name);
             return base.OnConnectedAsync();
         }
 

@@ -30,11 +30,13 @@ namespace PenFootball_GameServer.Services
         public string Summary { get; set; } //승리 방법. 
         //규약: *1* 혹은 *2* 와 같이 적으면 클라이언트 측에서 이름으로 교체해줌 (Game은 플레이어들의 실제 이름을 모름!)
         public int Winner { get; set; } //이긴 사람의 번호 (ex) 1번/2번 플레이어. 2번 플레이어에게 보낼 때는 flip해줘야 함
+        public bool WasDeuce { get; set; } //9대9였는지
 
-        public GameEndOutput(string summary, int winner)
+        public GameEndOutput(string summary, int winner, bool wasDeuce = false)
         {
             Summary = summary;
             Winner = winner;
+            WasDeuce = wasDeuce;
         }
 
         public IGameOutput Flip()

@@ -15,6 +15,9 @@ namespace PenFootball_GameServer.GameLogic
         public Vector2 Def1Spawn { get; set; }
         public Vector2 Def2Spawn { get; set; }
         public Vector2 BallSpawn { get; set; }
+        public Vector2 BallSpawn1 { get; set; }
+        public Vector2 BallSpawn2 { get; set; }
+
     }
 
     public class ConfinedPlayer : Player
@@ -61,6 +64,7 @@ namespace PenFootball_GameServer.GameLogic
         public int Score2 { get; private set; } = 0;
 
         private List<int> leftplayers = new List<int> { 1, 2, 3, 4 };
+        private int recentwin  = 0;
 
         public ConfinedPlayer[] Players { get; }
         public ConcurrentQueue<IGameOutput> OutputQueue { get; private set; } = new ConcurrentQueue<IGameOutput>();
@@ -78,7 +82,9 @@ namespace PenFootball_GameServer.GameLogic
                 Def2Spawn = new Vector2(PhysConfig.Width - def1spawn, 30),
                 Atk2Spawn = new Vector2(PhysConfig.Width/2-def1spawn, 30),
                 Atk1Spawn = new Vector2(PhysConfig.Width/2+def1spawn, 30),
-                BallSpawn = new Vector2(PhysConfig.Width/2, 150)
+                BallSpawn = new Vector2(PhysConfig.Width/2, 150),
+                BallSpawn1 = new Vector2(PhysConfig.Width *0.25f, 150),
+                BallSpawn2 = new Vector2(PhysConfig.Width *0.75f, 150)
             };
 
             Atk1 = new ConfinedPlayer(PhysConfig.Width / 2, PhysConfig.Width);
@@ -97,7 +103,12 @@ namespace PenFootball_GameServer.GameLogic
             Atk2.Reset(GameConfig.Atk2Spawn);
             Def1.Reset(GameConfig.Def1Spawn);
             Def2.Reset(GameConfig.Def2Spawn);
-            BallObj.Reset(GameConfig.BallSpawn);
+            var ballspawn = GameConfig.BallSpawn;
+            if (recentwin == 1)
+                ballspawn = GameConfig.BallSpawn1;
+            if (recentwin == 2)
+                ballspawn = GameConfig.BallSpawn2;
+            BallObj.Reset(ballspawn);
         }
 
         private GameKey flipKey(GameKey key)
@@ -153,6 +164,7 @@ namespace PenFootball_GameServer.GameLogic
             if (BallObj.Pos.X < PhysConfig.GoalWidth - PhysConfig.BallRadius && BallObj.Pos.Y < PhysConfig.GoalHeight + PhysConfig.BallRadius)
             {
                 Score2 += 1;
+                recentwin = 2;
                 OutputQueue.Enqueue(new ScoreOutput(Score1, Score2));
                 if (!ChkGameEnd())
                     ResetRound();
@@ -160,6 +172,7 @@ namespace PenFootball_GameServer.GameLogic
             else if (BallObj.Pos.X > PhysConfig.Width - PhysConfig.GoalWidth + PhysConfig.BallRadius && BallObj.Pos.Y < PhysConfig.GoalHeight + PhysConfig.BallRadius)
             {
                 Score1 += 1;
+                recentwin = 1;
                 OutputQueue.Enqueue(new ScoreOutput(Score1, Score2));
                 if (!ChkGameEnd())
                     ResetRound();

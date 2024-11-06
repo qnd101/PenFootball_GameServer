@@ -12,6 +12,7 @@ namespace PenFootball_GameServer.Hubs
         Task Preview(PreviewOutput output);
         Task GameEnd(GameEndOutput geo);
         Task Chat(ChatOutput co);
+        Task GlobalChat(ChatObj cobj);
 
     }
 }

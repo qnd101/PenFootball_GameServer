@@ -326,17 +326,19 @@ namespace PenFootball_GameServer.GameLogic
             if (Score1 >= GameConfig.MaxScore)
             {
                 var addstr = "";
-                if (Score2 == GameConfig.MaxScore - 1)
+                bool wasfierce = Score2 == GameConfig.MaxScore - 1;
+                if (wasfierce)
                     addstr = " after a fierce battle";
-                OutputQueue.Enqueue(new GameEndOutput($"*1* reached {GameConfig.MaxScore} points{addstr}.", 1));
+                OutputQueue.Enqueue(new GameEndOutput($"*1* reached {GameConfig.MaxScore} points{addstr}.", 1, wasfierce));
                 return true;
             }
             if (Score2 >= GameConfig.MaxScore)
             {
                 var addstr = "";
-                if (Score1 == GameConfig.MaxScore - 1)
+                bool wasfierce = Score1 == GameConfig.MaxScore - 1;
+                if (wasfierce)
                     addstr = " after a fierce battle";
-                OutputQueue.Enqueue(new GameEndOutput($"*2* reached {GameConfig.MaxScore} points{addstr}.", 2));
+                OutputQueue.Enqueue(new GameEndOutput($"*2* reached {GameConfig.MaxScore} points{addstr}.", 2, wasfierce));
                 return true;
             }
             return false;

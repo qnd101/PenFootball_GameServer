@@ -7,7 +7,7 @@ namespace PenFootball_GameServer.Services
 {
 
     //나중에 각종 통계도 추가할 것
-    public record GameResultData(int Player1ID, int Player2ID, int winner);
+    public record GameResultData(int Player1ID, int Player2ID, int winner, bool wasdeuce, int score1, int score2);
 
     public interface IGameDataService
     {
@@ -214,8 +214,10 @@ namespace PenFootball_GameServer.Services
             switch (GetPlayerState(conid))
             {
                 case WaitingState ws:
-                    //지금 상황에서 waitline은 normgame 뿐
-                    ImmutableInterlocked.Update(ref _waitline_normgame, (li) => li.RemoveAll(x => x.conid == conid));
+                    if(ws.WaitingFor==GameType.NormGame)
+                        ImmutableInterlocked.Update(ref _waitline_normgame, (li) => li.RemoveAll(x => x.conid == conid));
+                    else if (ws.WaitingFor==GameType.TwoVTwoGame)
+                        ImmutableInterlocked.Update(ref _waitline_twovtwo, (li) => li.RemoveAll(x => x.conid == conid));
                     unregister(conid);
                     break;
                 case TrainingState ts:
@@ -296,7 +298,7 @@ namespace PenFootball_GameServer.Services
             foreach (var item in _roomdata_normgame.Values)
             {
                 if (item.Game.GetOutputs(1).FirstOrDefault(x => x is GameEndOutput) is GameEndOutput go)
-                    results.Add(new GameResultData(_dbiddata[item.Player1ID], _dbiddata[item.Player2ID], go.Winner));
+                    results.Add(new GameResultData(_dbiddata[item.Player1ID], _dbiddata[item.Player2ID], go.Winner, go.WasDeuce, item.Game.Score1, item.Game.Score2));
             }
             return results;
         }
