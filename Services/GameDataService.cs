@@ -2,6 +2,8 @@
 using PenFootball_GameServer.Hubs;
 using System.Collections.Immutable;
 using System.ComponentModel.Design.Serialization;
+using System.Diagnostics.CodeAnalysis;
+using System.Text;
 
 namespace PenFootball_GameServer.Services
 {
@@ -22,7 +24,8 @@ namespace PenFootball_GameServer.Services
 
         //입력
         void KeyInput(string conid, GameKey keytype, KeyEventType eventtype);
-        void ExitInput(string conid); 
+        void ExitInput(string conid);
+        bool ChatInput(string conid, string msg);
 
         //플레이어 추가/제거 (Double connection이면 아무 작업도 안하도록)
         void EnterTrain(string conid, int dbid); 
@@ -40,13 +43,13 @@ namespace PenFootball_GameServer.Services
         void MakeMatches(float dt);
         void Update(float dt);
 
-        //void AddEvent(int gameid, IGameEvent gameEvent);
+        //API용 데이터에 대한 뷰 제공
+        IImmutableDictionary<int, (NormGame Game, string Player1ID, string Player2ID)> Roomdata_NormGame { get; }
+        IImmutableDictionary<int, (TrainGame Game, string PlayerID)> Roomdata_Train { get; }
+        IImmutableDictionary<int, (TwoVTwoGame Game, string[] PlayerIDs)> Roomdata_TwoVTwo { get; }
 
-        //(string conid, int id)? AddWait(string connectionid, int playerid, out bool doubleconnnection);
-
-        //void RemoveID(string conid);
-
-        //(IEnumerable<(string connectionid, Frame frame)>, IEnumerable<GameResultData>) UpdateGames(float dt);
+        IImmutableList<(string conid, int rating)> Waitline_Normgame { get; }
+        IImmutableList<(string conid, int rating)> Waitline_TwoVTwo { get; }
     }
 
     public class GameDataService : IGameDataService
@@ -57,6 +60,8 @@ namespace PenFootball_GameServer.Services
 
         private ImmutableList<(string conid, int rating)> _waitline_normgame;
         private ImmutableList<(string conid, int rating)> _waitline_twovtwo;
+
+        private ImmutableDictionary<string, int> _credit_dict;
 
         //Data of Currently Playing/Waiting players
         private ImmutableDictionary<string, int> _dbiddata;
@@ -76,6 +81,13 @@ namespace PenFootball_GameServer.Services
         private float _waitoutputconter = 0.5f;
         private static float _waitoutputtimeout = 0.5f;
 
+        public IImmutableDictionary<int, (NormGame Game, string Player1ID, string Player2ID)> Roomdata_NormGame { get => _roomdata_normgame; }
+        public IImmutableDictionary<int, (TrainGame Game, string PlayerID)> Roomdata_Train { get => _roomdata_train; }
+        public IImmutableDictionary<int, (TwoVTwoGame Game, string[] PlayerIDs)> Roomdata_TwoVTwo { get => _roomdata_twovtwo; }
+
+        public IImmutableList<(string conid, int rating)> Waitline_Normgame { get => _waitline_normgame; }
+        public IImmutableList<(string conid, int rating)> Waitline_TwoVTwo { get => _waitline_twovtwo; }
+
         public GameDataService(ILogger<GameDataService> logger)
         {
             _logger = logger;
@@ -86,6 +98,7 @@ namespace PenFootball_GameServer.Services
             _waitline_normgame = ImmutableList<(string, int)>.Empty;
             _waitline_twovtwo = ImmutableList<(string, int)>.Empty;
             _dbiddata = ImmutableDictionary<string, int>.Empty;
+            _credit_dict = ImmutableDictionary<string, int>.Empty;
         }
 
         public string? GetConID(int id)
@@ -105,6 +118,41 @@ namespace PenFootball_GameServer.Services
 
         public IEnumerable<string> AllConIDs() => _dbiddata.Keys;
         public IEnumerable<int> AllGameIDs() => _roomdata_normgame.Keys.Concat(_roomdata_train.Keys).Concat(_roomdata_twovtwo.Keys);
+
+        private bool useCredit(string conid, int needed)
+        {
+            if (!_credit_dict.Keys.Contains(conid))
+                return false;
+            var budget = _credit_dict[conid];
+            if(budget < needed)
+                return false;
+
+            ImmutableInterlocked.Update(ref _credit_dict, dict => dict.SetItem(conid, budget - needed));
+            return true;
+        }
+
+        public bool ChatInput(string conid, string msg)
+        {
+            var needed = Encoding.UTF8.GetBytes(msg).Length;
+
+            switch (GetPlayerState(conid))
+            {
+                case TrainingState ts:
+                    //_roomdata_train[ts.GameID].Game.EventQueue.Append(new ChatEvent(1, msg));
+                    return true;
+                case NormGameState ns:
+                    var ok = useCredit(conid, needed);
+                    if (ok)
+                        _roomdata_normgame[ns.GameID].Game.OutputQueue.Append(new ChatOutput(ns.PlayerType, msg));
+                    return ok;
+                case TwoVTwoGameState tvts:
+                    var ok2 = useCredit(conid, needed);
+                    if (ok2)
+                        _roomdata_twovtwo[tvts.GameID].Game.OutputQueue.Append(new ChatOutput(tvts.PlayerType, msg));
+                    return ok2;
+            }
+            return false;
+        }
 
         public IPlayerState? GetPlayerState(string conid)
         {
@@ -134,7 +182,6 @@ namespace PenFootball_GameServer.Services
                 {
                     return new TwoVTwoGameState(whichplayer, item.Value.PlayerIDs, item.Key);
                 }
-
             }
 
             return null;

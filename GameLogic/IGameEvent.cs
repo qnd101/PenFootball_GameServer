@@ -34,4 +34,14 @@
             WhichPlayer=whichplayer;
         }
     }
+
+    public class ChatEvent : IGameEvent
+    {
+        public int WhichPlayer { get; }
+        public string Msg { get; }
+        public ChatEvent(int whichplayer, string msg)
+        {
+            WhichPlayer = whichplayer; Msg = msg;
+        }
+    }
 }

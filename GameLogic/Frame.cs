@@ -4,7 +4,6 @@ using System.Runtime.CompilerServices;
 namespace PenFootball_GameServer.GameLogic
 {
     //Frame object that serializes into JSON object
-
     public record VectorForJSON(float x, float y)
     {
         public static VectorForJSON FromVec2(System.Numerics.Vector2 vec) => new VectorForJSON(vec.X, vec.Y);

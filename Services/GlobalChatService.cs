@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 using PenFootball_GameServer.Hubs;
+using PenFootball_GameServer.Settings;
 using System.Collections.Concurrent;
 
 namespace PenFootball_GameServer.Services
@@ -24,9 +26,9 @@ namespace PenFootball_GameServer.Services
         private static int _chattimeout = 1000;
         private static int _chatmaxlen = 30;
 
-        public GlobalChatService()
+        public GlobalChatService(IOptions<ConnectionSettings> consettings)
         {
-            _chatqueue.Enqueue(("SSHSPhys", "<server reset>", DateTime.Now));
+            _chatqueue.Enqueue((consettings.Value.Username, "<server reset>", DateTime.Now));
         }
 
         public ChatResult AddChat(string name, string msg)
@@ -47,7 +49,11 @@ namespace PenFootball_GameServer.Services
 
         public ChatObj[] GetCache()
         {
-            return _chatqueue.Select(item => new ChatObj(item.name, item.msg, $"{item.sendtime.Hour}:{item.sendtime.Minute}")).ToArray();
+            return _chatqueue.Select(item => new ChatObj(item.name, item.msg, GetTimeStr(item.sendtime))).ToArray();
+        }
+        public static string GetTimeStr(DateTime time)
+        {
+            return $"{time.Hour:D2}:{time.Minute:D2}";
         }
     }
 }

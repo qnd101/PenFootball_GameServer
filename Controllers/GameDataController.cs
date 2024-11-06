@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using PenFootball_GameServer.Hubs;
 using PenFootball_GameServer.Services;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
@@ -48,6 +49,18 @@ namespace PenFootball_GameServer.Controllers
                 }
             }
             return Ok(new { state = "offline" });
+        }
+
+        //연결된 사람들의 수
+        [HttpGet("summary")]
+        public async Task<IActionResult> GetConnectionSummary()
+        {
+            int connections = GameHub._connections.Count;
+            int normgames = _gamedata.Roomdata_NormGame.Count * 2;
+            int twovtwos = _gamedata.Roomdata_TwoVTwo.Count * 4;
+            int training = _gamedata.Roomdata_Train.Count;
+            int waitings = _gamedata.Waitline_Normgame.Count + _gamedata.Waitline_TwoVTwo.Count;
+            return Ok(new {connections= connections, normgames = normgames, twovtwos=twovtwos, training=training, waitings=waitings});
         }
     }
 }

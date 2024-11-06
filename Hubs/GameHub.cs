@@ -18,6 +18,8 @@ namespace PenFootball_GameServer.Hubs
         private EntranceSettings _entrancesettings;
         private IGlobalChatService _globalchatservice;
 
+        public static ConcurrentDictionary<string, int> _connections = new ConcurrentDictionary<string, int>();
+
         public GameHub(ILogger<GameHub> logger, IGameDataService gamedata, EntranceSettings entranceSettings, IGlobalChatService globalchatservice)
         {
             _logger = logger;
@@ -32,9 +34,10 @@ namespace PenFootball_GameServer.Hubs
             string name = (Context.Items["Name"] as string) ?? throw (new HubException("Name not found"));
             var result = _globalchatservice.AddChat(name, msg);
             if(result == ChatResult.Success) 
-                await Clients.All.GlobalChat(new ChatObj(name, msg, $"{DateTime.Now.Hour}:{DateTime.Now.Minute}"));
+                await Clients.All.GlobalChat(new ChatObj(name, msg, GlobalChatService.GetTimeStr(DateTime.Now)));
             return (int)result;
         }
+
 
         public async Task<ChatObj[]> GetGlobalChatCache()
         {
@@ -139,6 +142,9 @@ namespace PenFootball_GameServer.Hubs
             Context.Items.Add("ID", id);
             Context.Items.Add("Email", email);
             Context.Items.Add("Name", name);
+
+            if(!_connections.Values.Contains(id))
+                _connections.TryAdd(Context.ConnectionId, id);
             return base.OnConnectedAsync();
         }
 
@@ -150,10 +156,14 @@ namespace PenFootball_GameServer.Hubs
                 throw new HubException($"Something went wrong. ID not found");
         }
 
-
+        public async Task<bool> ChatInput(string msg)
+        {
+            return _gamedata.ChatInput(Context.ConnectionId, msg);
+        }
         public override Task OnDisconnectedAsync(Exception? exception)
         {
             _logger.LogInformation($"Connection between ID: {Context.ConnectionId}({getID()}) Ended");
+            _connections.TryRemove(Context.ConnectionId, out _);
             _gamedata.ExitInput(Context.ConnectionId);
             return base.OnDisconnectedAsync(exception);
         }
