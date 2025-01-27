@@ -18,8 +18,8 @@ builder.Services.Configure<ConnectionSettings>(builder.Configuration.GetSection(
 
 var tokenkeysettings = new TokenKeySettings();
 var entrancesettings = new EntranceSettings();
-//¸ÕÀú ¸ŞÀÎ ¼­¹ö·ÎºÎÅÍ JWT Å°¸¦ ¹Ş¾Æ¿Í¾ß ÇÔ
-//ÀÌ¶§ °èÁ¤ ÀÌ¸§°ú ºñ¹Ğ¹øÈ£¸¦ ÀÌ¿ëÇÔ
+//ë¨¼ì € ë©”ì¸ ì„œë²„ë¡œë¶€í„° JWT í‚¤ë¥¼ ë°›ì•„ì™€ì•¼ í•¨
+//ì´ë•Œ ê³„ì • ì´ë¦„ê³¼ ë¹„ë°€ë²ˆí˜¸ë¥¼ ì´ìš©í•¨
 try
 {
     var consettings = (builder.Configuration.GetSection("ConnectionSettings") ?? throw new Exception("main server path not found in config file"))
@@ -41,7 +41,7 @@ try
 catch (Exception ex)
 {
     Console.WriteLine(ex);
-    Environment.Exit(1); //¿À·ù³ª¸é Å»ÁÖ
+    Environment.Exit(1); //ì˜¤ë¥˜ë‚˜ë©´ íƒˆì£¼
 }
 
 // Add services to the container.
